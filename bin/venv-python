@@ -1,0 +1,44 @@
+#! /bin/bash
+
+# bash ------------------------------------------------------------------------
+
+set -o errexit -o nounset -o pipefail
+
+
+# paths -----------------------------------------------------------------------
+
+readonly _BASENAME_BASH_SOURCE_0=$(basename "${BASH_SOURCE[ 0 ]}")
+readonly _REALPATH=$(realpath "${BASH_SOURCE[ 0 ]}")
+readonly _BASENAME=$(basename "${_REALPATH}")
+readonly _DIRNAME=$(dirname "${_REALPATH}")
+readonly _ROOT=$(dirname "${_DIRNAME}")
+readonly _NAME=$(basename "${_ROOT}")
+
+
+# environment -----------------------------------------------------------------
+
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="${_ROOT}/src/python/${PYTHONPATH:+:${PYTHONPATH}}"
+
+
+# .venv/ ----------------------------------------------------------------------
+
+if [[ ! -d "${_ROOT}/.venv/" ]]; then
+    echo "info: .venv/ is missing"
+    echo "hint: run '${_ROOT}/bin/venv-create'"
+    exit 111
+fi
+
+
+# prepare ---------------------------------------------------------------------
+
+argv=( "${_ROOT}/.venv/bin/python" )
+[[ -L "${_DIRNAME}/${_BASENAME_BASH_SOURCE_0}" ]] && argv+=( -m "${_BASENAME_BASH_SOURCE_0}" )
+argv+=( "${@}" )
+readonly argv
+
+
+# execute ---------------------------------------------------------------------
+
+exec "${argv[@]}"
+

@@ -1,0 +1,29 @@
+#! /bin/bash
+
+# bash ----------------------------------------------------------------------------------------------
+
+set -o errexit -o nounset -o pipefail
+
+
+# paths ---------------------------------------------------------------------------------------------
+
+readonly _BASENAME_BASH_SOURCE_0=$(basename "${BASH_SOURCE[ 0 ]}")
+readonly _REALPATH=$(realpath "${BASH_SOURCE[ 0 ]}")
+readonly _BASENAME=$(basename "${_REALPATH}")
+readonly _DIRNAME=$(dirname "${_REALPATH}")
+readonly _ROOT=$(dirname "${_DIRNAME}")
+readonly _NAME=$(basename "${_ROOT}")
+readonly _TIMESTAMP=$(date +%Y-%m-%d.%H%M.%S)
+
+
+# prepare ---------------------------------------------------------------------
+
+argv=( "${_ROOT}/bin/venv-python" )
+argv+=( "${_ROOT}/src/python/main/main.py" )
+readonly argv
+
+
+# execute ---------------------------------------------------------------------
+
+exec "${argv[@]}" "${@}"
+

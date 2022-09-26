@@ -1,0 +1,33 @@
+#! /bin/bash
+
+# bash ------------------------------------------------------------------------
+
+set -o errexit -o nounset -o pipefail
+
+
+# paths -----------------------------------------------------------------------
+
+readonly _BASENAME_BASH_SOURCE_0=$(basename "${BASH_SOURCE[ 0 ]}")
+readonly _REALPATH=$(realpath "${BASH_SOURCE[ 0 ]}")
+readonly _BASENAME=$(basename "${_REALPATH}")
+readonly _DIRNAME=$(dirname "${_REALPATH}")
+readonly _ROOT=$(dirname "${_DIRNAME}")
+readonly _NAME=$(basename "${_ROOT}")
+
+
+# prepare ---------------------------------------------------------------------
+
+if [[ -L "${_DIRNAME}/${_BASENAME_BASH_SOURCE_0}" ]]; then
+    argv=( "${_ROOT}/.venv/bin/${_BASENAME_BASH_SOURCE_0}" )
+else
+    argv=( "${_ROOT}/.venv/bin/${1}" )
+    shift
+fi
+argv+=( "${@}" )
+readonly argv
+
+
+# execute ---------------------------------------------------------------------
+
+exec "${argv[@]}"
+

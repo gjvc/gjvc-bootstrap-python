@@ -1,0 +1,181 @@
+#! /bin/bash
+
+# bash ----------------------------------------------------------------------------------------------
+
+set -o errexit -o nounset -o pipefail
+
+
+# paths ---------------------------------------------------------------------------------------------
+
+readonly _BASENAME_BASH_SOURCE_0=$(basename "${BASH_SOURCE[ 0 ]}")
+readonly _REALPATH=$(realpath "${BASH_SOURCE[ 0 ]}")
+readonly _BASENAME=$(basename "${_REALPATH}")
+readonly _DIRNAME=$(dirname "${_REALPATH}")
+readonly _ROOT=$(dirname "${_DIRNAME}")
+readonly _NAME=$(basename "${_ROOT}")
+readonly _TIMESTAMP=$(date +%Y-%m-%d.%H%M.%S)
+
+
+# logging -------------------------------------------------------------------------------------------
+
+if [[ -n ${VENV_CREATE_LOGGING_ENABLED:-} ]]; then
+    readonly _LOG=${_ROOT}/var/log/${_BASENAME}-${_TIMESTAMP}.log
+    [[ ! -d $(dirname ${_LOG}) ]] && mkdir -p $(dirname ${_LOG})
+    exec &>> >( ts '%Y-%m-%d %H:%M:%.S ' | tee ${_LOG} )
+fi
+
+
+# helpers -------------------------------------------------------------------------------------------
+
+function banner {
+    printf -- "\n\n"
+    printf -- "---------------------------------------------------------------------------------------------------\n"
+    for line in "${@}"; do
+        printf ">>> ${line}\n"
+    done
+    printf -- "---------------------------------------------------------------------------------------------------\n"
+    printf -- "\n"
+}
+
+
+# announce ------------------------------------------------------------------------------------------
+
+banner "[${_REALPATH}] starting"
+
+
+# environment ---------------------------------------------------------------------------------------
+
+readonly pip_cache_dir_default="/var/tmp/pip.cache.${LOGNAME}"
+export PIP_CACHE_DIR=${PIP_CACHE_DIR:-${pip_cache_dir_default}}
+
+
+# venv ----------------------------------------------------------------------------------------------
+
+readonly venv_root="${_ROOT}/.venv"
+readonly venv_python="${venv_root}/bin/python"
+
+
+# base python ---------------------------------------------------------------------------------------
+
+if [[ -n ""${1:-}"" ]]; then
+    readonly base_python=${1}
+    readonly base_python_origin='command line'
+else
+    if [[ -L ${venv_python} ]]; then
+        readonly base_python=$(realpath ${venv_python})
+        readonly base_python_origin="existing .venv/ symlink ${venv_python} -> ${base_python}"
+    elif [[ -f ${venv_python} ]]; then
+        readonly base_python=${venv_python}
+        readonly base_python_origin="existing .venv/ binary ${venv_python}"
+    else
+        readonly base_python=$(command -v python3)
+        readonly base_python_origin='${PATH}'
+    fi
+fi
+
+readonly base_python_implementation=$( ${base_python} -c "import platform; print( f'{platform.python_implementation()}' )" )
+readonly python_version_tuple_0=$( ${base_python} -c "import platform; print( f'{platform.python_version_tuple()[0]}' )" )
+readonly python_version_tuple_1=$( ${base_python} -c "import platform; print( f'{platform.python_version_tuple()[1]}' )" )
+readonly base_python_implementation_version="${base_python_implementation,,}${python_version_tuple_0}${python_version_tuple_1}"
+
+
+# pip install ---------------------------------------------------------------------------------------
+
+pip_install_options=()
+pip_install_options+=( --cache-dir ${PIP_CACHE_DIR} )
+pip_install_options+=( --isolated )
+pip_install_options+=( --trusted-host files.pythonhosted.org )
+pip_install_options+=( --trusted-host pypi.org )
+pip_install_options+=( --trusted-host pypi.python.org )
+pip_install_options+=( --upgrade )
+readonly pip_install_options
+
+
+# requirement.txt -----------------------------------------------------------------------------------
+
+readonly venv_requirement_txt="${_ROOT}/etc/pip/requirement.txt"
+readonly venv_versions_txt="${venv_requirement_txt}.${base_python_implementation_version}"
+
+if [[ -f ${venv_versions_txt} ]] && [[ ${venv_versions_txt} -nt ${venv_requirement_txt} ]]; then
+    readonly venv_effective_requirement_txt="${venv_versions_txt}"
+    readonly venv_versions_txt_exists=1
+else
+    readonly venv_versions_txt_exists=0
+    readonly venv_effective_requirement_txt="${venv_requirement_txt}"
+fi
+
+
+# announce ------------------------------------------------------------------------------------------
+
+printf "HOSTNAME                                [%s]\n" "${HOSTNAME:-}"
+printf "PIP_CACHE_DIR                           [%s]\n" "${PIP_CACHE_DIR:-}"
+printf "USER                                    [%s]\n" "${USER:-}"
+printf "\n"
+printf "base_python                             [%s]\n" "${base_python:-}"
+printf "base_python_implementation              [%s]\n" "${base_python_implementation:-}"
+printf "base_python_implementation_version      [%s]\n" "${base_python_implementation_version:-}"
+printf "base_python_origin                      [%s]\n" "${base_python_origin:-}"
+#printf "\n"
+#printf "pip_install_options                     [%s]\n" "${pip_install_options[*]:-}"
+printf "\n"
+printf "venv_root                               [%s]\n" "${venv_root:-}"
+printf "venv_python                             [%s]\n" "${venv_python:-}"
+printf "venv_requirement_txt                    [%s]\n" "${venv_requirement_txt:-}"
+printf "venv_versions_txt                       [%s]\n" "${venv_versions_txt:-}"
+printf "venv_versions_txt_exists                [%s]\n" "${venv_versions_txt_exists:-}"
+printf "venv_effective_requirement_txt          [%s]\n" "${venv_effective_requirement_txt:-}"
+
+
+# .venv/ directory ------------------------------------------------------------
+
+banner "creating .venv/ in [${venv_root}]"
+${base_python} -m venv --clear "${venv_root}"
+
+
+# pip install -----------------------------------------------------------------
+
+pip_argv=( "${venv_root}/bin/python" -m pip )
+"${pip_argv[@]}" 1>/dev/null 2>&1
+
+if [[ "${?}" -ne 0 ]]; then
+    printf "pip does not seem to be available; attempting to fetch\n"
+    readonly get_pip_py_url="https://bootstrap.pypa.io/get-pip.py"
+    readonly get_pip_py="${_ROOT}/src/aux/get-pip.py"
+    printf "fetching from %s and writing to %s ...\n" ${get_pip_py_url} ${get_pip_py}
+    mkdir --parents $( dirname ${get_pip_py} ) && wget ${get_pip_py_url} --output-document ${get_pip_py}
+    printf "executing ${venv_python} ${get_pip_py} ...\n"
+    ${venv_python} ${get_pip_py}
+    "${pip_argv[@]}" --version
+fi
+
+pip_version=$("${pip_argv[@]}" --version)
+
+
+# pip base packages ---------------------------------------------------------------------------------
+
+readonly pip_base_packages=( pip wheel )
+banner "upgrading pip base packages [${pip_base_packages[*]}] in ${venv_root}"
+${venv_python} -m pip install --upgrade "${pip_install_options[@]}" "${pip_base_packages[@]}"
+
+
+# execute -------------------------------------------------------------------------------------------
+
+banner "installing packages from [${venv_effective_requirement_txt}]"
+${venv_python} -m pip install --requirement ${venv_effective_requirement_txt}
+
+banner "writing versions to [${venv_versions_txt}]"
+${venv_python} -m pip freeze | sed '/pkg_resources==0.0.0/d' | sort | tee ${venv_versions_txt}
+
+
+# cleanup -------------------------------------------------------------------------------------------
+
+banner "removing .pyc files in ${venv_root}"
+venv_root_size_before=$( du --human-readable --summarize ${venv_root} | cut --fields 1 )
+venv_root_pyc_files_count=$( find ${venv_root} -name '*.pyc' -print -delete | wc --lines )
+venv_root_size_after=$( du --human-readable --summarize ${venv_root} | cut --fields 1 )
+printf "%s .pyc files removed, %s before, %s after\n" ${venv_root_pyc_files_count} ${venv_root_size_before} ${venv_root_size_after}
+
+
+# debrief -------------------------------------------------------------------------------------------
+
+banner "[${_REALPATH}] complete"
